@@ -1,4 +1,3 @@
-// src/index.ts
 import express from 'express';
 import cors from 'cors';
 
@@ -71,15 +70,12 @@ app.post('/topsis', (req, res) => {
 
     const scores = dMinus.map((dMin, i) => dMin / (dMin + dPlus[i]));
 
-    // Gabungkan nama dan skor
     const result = names.map((name: string, i: number) => ({
       name,
       score: scores[i],
     }));
 
-    // Urutkan dari skor tertinggi ke terendah
     result.sort((a: { name: string; score: number }, b: { name: string; score: number }) => b.score - a.score);
-
 
     res.json(result);
   } catch (err) {

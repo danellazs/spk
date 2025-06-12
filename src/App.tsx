@@ -13,10 +13,10 @@ interface Result {
 
 function App() {
   const [alternatives, setAlternatives] = useState<AlternativeInput[]>([
-    { name: '', criteria: [0, 0, 0, 0, 0, 0, 0] },
-    { name: '', criteria: [0, 0, 0, 0, 0, 0, 0] },
-    { name: '', criteria: [0, 0, 0, 0, 0, 0, 0] },
-    { name: '', criteria: [0, 0, 0, 0, 0, 0, 0] },
+    { name: '', criteria: [0, 0, 0, 0, 0, 0, 0, 0] },
+    { name: '', criteria: [0, 0, 0, 0, 0, 0, 0, 0] },
+    { name: '', criteria: [0, 0, 0, 0, 0, 0, 0, 0] },
+    { name: '', criteria: [0, 0, 0, 0, 0, 0, 0, 0] },
   ]);
 
   const [results, setResults] = useState<Result[]>([]);
@@ -29,6 +29,7 @@ function App() {
     'Harga',
     'Kualitas (Grade)',
     'Layanan Service & Garansi',
+    'Waktu Pengiriman', // Kriteria baru
   ];
 
   const handleChange = (altIndex: number, critIndex: number, value: number) => {
@@ -53,7 +54,7 @@ function App() {
         }
       }
 
-      // Proses alternatif: gabungkan stok menjadi "pasokan" → total jadi 6 kriteria
+      // Proses alternatif: gabungkan stok menjadi "pasokan"
       const processedAlternatives = alternatives.map((alt) => {
         const stokSaatIni = alt.criteria[1];
         const stokDibutuhkan = alt.criteria[2];
@@ -70,6 +71,7 @@ function App() {
           alt.criteria[4], // Harga
           alt.criteria[5], // Kualitas
           alt.criteria[6], // Layanan
+          alt.criteria[7], // Waktu Pengiriman
         ];
 
         return {
@@ -79,8 +81,8 @@ function App() {
       });
 
       // Bobot dan tipe kriteria
-      const weights = [0.2, 0.15, 0.1, 0.1, 0.15, 0.15];
-      const criteriaType = ['benefit', 'cost', 'cost', 'cost', 'benefit', 'benefit'];
+      const weights = [0.2, 0.15, 0.1, 0.1, 0.15, 0.1, 0.2];
+      const criteriaType = ['benefit', 'cost', 'cost', 'cost', 'benefit', 'benefit', 'cost'];
 
       const response = await axios.post('http://localhost:3001/topsis', {
         alternatives: processedAlternatives,
