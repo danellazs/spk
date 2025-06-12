@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import axios from 'axios';
 
 interface AlternativeInput {
   name: string;
@@ -11,6 +10,55 @@ interface Result {
   score: number;
 }
 
+// TOPSIS Utility Functions
+const normalizeMatrix = (matrix: number[][]): number[][] => {
+  const numCriteria = matrix[0].length;
+  const normMatrix = Array.from({ length: matrix.length }, () => Array(numCriteria).fill(0));
+
+  for (let j = 0; j < numCriteria; j++) {
+    let sumSquares = 0;
+    for (let i = 0; i < matrix.length; i++) {
+      sumSquares += matrix[i][j] ** 2;
+    }
+    const denom = Math.sqrt(sumSquares) || 1;
+    for (let i = 0; i < matrix.length; i++) {
+      normMatrix[i][j] = matrix[i][j] / denom;
+    }
+  }
+
+  return normMatrix;
+};
+
+const weightMatrix = (normalized: number[][], weights: number[]): number[][] => {
+  return normalized.map(row => row.map((value, j) => value * weights[j]));
+};
+
+const getIdealSolutions = (weighted: number[][], criteriaType: string[]) => {
+  const numCriteria = weighted[0].length;
+  const idealPos = Array(numCriteria).fill(0);
+  const idealNeg = Array(numCriteria).fill(0);
+
+  for (let j = 0; j < numCriteria; j++) {
+    const column = weighted.map(row => row[j]);
+    if (criteriaType[j] === 'benefit') {
+      idealPos[j] = Math.max(...column);
+      idealNeg[j] = Math.min(...column);
+    } else {
+      idealPos[j] = Math.min(...column);
+      idealNeg[j] = Math.max(...column);
+    }
+  }
+
+  return { idealPos, idealNeg };
+};
+
+const calculateDistances = (weighted: number[][], ideal: number[]): number[] => {
+  return weighted.map(row =>
+    Math.sqrt(row.reduce((sum, val, j) => sum + (val - ideal[j]) ** 2, 0))
+  );
+};
+
+// Main App Component
 function App() {
   const [alternatives, setAlternatives] = useState<AlternativeInput[]>([
     { name: '', criteria: [0, 0, 0, 0, 0, 0, 0, 0] },
@@ -25,11 +73,11 @@ function App() {
     'Tingkat Urgensi',
     'Stok Saat Ini',
     'Stok yang Dibutuhkan',
+    'Waktu Pengiriman',
     'Tingkat Kelangkaan',
     'Harga',
     'Kualitas (Grade)',
     'Layanan Service & Garansi',
-    'Waktu Pengiriman', // Kriteria baru
   ];
 
   const handleChange = (altIndex: number, critIndex: number, value: number) => {
@@ -44,18 +92,29 @@ function App() {
     setAlternatives(newAlternatives);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     try {
-      // Validasi nama alternatif tidak boleh kosong
       for (let alt of alternatives) {
         if (!alt.name.trim()) {
           alert('Semua alternatif harus memiliki nama.');
           return;
         }
+        if (alt.criteria.length !== 8 || alt.criteria.some(isNaN)) {
+          alert('Semua nilai kriteria harus diisi dan berupa angka.');
+          return;
+        }
       }
 
-      // Proses alternatif: gabungkan stok menjadi "pasokan"
-      const processedAlternatives = alternatives.map((alt) => {
+      // Hitung waktu pengiriman persentase
+      const waktuPengirimanArray = alternatives.map(alt => alt.criteria[3]);
+      const maxWaktu = Math.max(...waktuPengirimanArray);
+      const minWaktu = Math.min(...waktuPengirimanArray);
+      const waktuPersentase = waktuPengirimanArray.map(waktu => {
+        if (maxWaktu === minWaktu) return 0; // Avoid division by zero
+        return ((maxWaktu - waktu) / (maxWaktu - minWaktu)) * 100;
+      });
+
+      const processedAlternatives = alternatives.map((alt, index) => {
         const stokSaatIni = alt.criteria[1];
         const stokDibutuhkan = alt.criteria[2];
 
@@ -65,13 +124,13 @@ function App() {
             : ((stokDibutuhkan - stokSaatIni) / stokDibutuhkan) * 100;
 
         const newCriteria = [
-          alt.criteria[0], // Tingkat Urgensi
+          alt.criteria[0], // Urgensi
           pasokan,         // Pasokan
-          alt.criteria[3], // Tingkat Kelangkaan
-          alt.criteria[4], // Harga
-          alt.criteria[5], // Kualitas
-          alt.criteria[6], // Layanan
-          alt.criteria[7], // Waktu Pengiriman
+          waktuPersentase[index], // Waktu Pengiriman dalam Persentase
+          alt.criteria[4], // Kelangkaan
+          alt.criteria[5], // Harga
+          alt.criteria[6], // Kualitas
+          alt.criteria[7], // Layanan
         ];
 
         return {
@@ -80,20 +139,31 @@ function App() {
         };
       });
 
-      // Bobot dan tipe kriteria
-      const weights = [0.2, 0.15, 0.1, 0.1, 0.15, 0.1, 0.2];
-      const criteriaType = ['benefit', 'cost', 'cost', 'cost', 'benefit', 'benefit', 'cost'];
+      const weights = [0.3, 0.25, 0.2, 0.2, 0.07, 0.05, 0.03];
+      const criteriaType = ['benefit', 'benefit', 'cost', 'cost', 'cost', 'benefit', 'benefit'];
 
-      const response = await axios.post('http://localhost:3001/topsis', {
-        alternatives: processedAlternatives,
-        weights,
-        criteriaType,
-      });
+      const names = processedAlternatives.map(a => a.name);
+      const matrix = processedAlternatives.map(a => a.criteria);
 
-      setResults(response.data);
+      const normalized = normalizeMatrix(matrix);
+      const weighted = weightMatrix(normalized, weights);
+      const { idealPos, idealNeg } = getIdealSolutions(weighted, criteriaType);
+
+      const dPlus = calculateDistances(weighted, idealPos);
+      const dMinus = calculateDistances(weighted, idealNeg);
+
+      const scores = dMinus.map((dMin, i) => dMin / (dMin + dPlus[i]));
+
+      const result = names.map((name, i) => ({
+        name,
+        score: parseFloat(scores[i].toFixed(4)),
+      }));
+
+      result.sort((a, b) => b.score - a.score);
+      setResults(result);
     } catch (error) {
       console.error(error);
-      alert('Terjadi kesalahan saat mengirim data ke server.');
+      alert('Terjadi kesalahan saat memproses data.');
     }
   };
 
